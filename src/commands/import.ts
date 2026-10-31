@@ -10,6 +10,7 @@ import {
 } from 'seyfert'
 import { isExpiredInteraction } from '../shared/errorGuard.ts'
 import { fetchImportFile, ImportFileError } from '../shared/importFile.ts'
+import { maybeStartPlayback } from '../shared/playback.ts'
 import {
   buildTrackResolveQueries,
   type PlaylistFileTrack,
@@ -131,9 +132,7 @@ export default class importcmds extends Command {
         }
       }
 
-      if (!player.playing && !player.paused && player.queue.length > 0) {
-        await player.play()
-      }
+      const started = await maybeStartPlayback(player)
 
       const completeTitle = t?.import?.complete || '🔥 Import Complete'
       const successText =
@@ -154,7 +153,11 @@ export default class importcmds extends Command {
           player.queue.length.toString()
         ) || `🎵 Total queue size: **${player.queue.length}** tracks`
 
-      const description = [successText, failText, totalText]
+      const autoStartNote =
+        !started && !player.playing && !player.paused && player.queue.length > 0
+          ? '⚠️ Queued but could not auto-start — use /play to begin.'
+          : ''
+      const description = [successText, failText, totalText, autoStartNote]
         .filter(Boolean)
         .join('\n')
 
@@ -167,6 +170,7 @@ export default class importcmds extends Command {
       await ctx.editOrReply({ embeds: [resultEmbed], flags: 64 })
     } catch (error: unknown) {
       if (isExpiredInteraction(error)) return
+      console.error('[import] failed:', error)
       const message =
         error instanceof ImportFileError
           ? error.message

@@ -21,6 +21,8 @@ import {
 } from '../shared/playback.ts'
 import { safeDefer } from '../utils/interactions.ts'
 
+const PLAYLIST_RE = /\.m3u8?$/i
+
 const isAbsolutePath = (value: string): boolean =>
   /^[A-Za-z]:[\\/]/.test(value) ||
   value.startsWith('\\\\') ||
@@ -35,15 +37,16 @@ const resolvePath = (value: string, base?: string): string | null => {
 @Cooldown.user(1000 * 60, { uses: 2 })
 @Declare({
   name: 'play-local',
-  description: 'Queue a local playlist (m3u/m3u8) from disk.'
+  description: 'Play a local file or a local playlist (m3u/m3u8) from disk.'
 })
 @Options({
   file: createAttachmentOption({
-    description: 'The m3u/m3u8 playlist to queue',
+    description: 'The audio file or m3u/m3u8 playlist to play',
     required: true
   }),
   base: createStringOption({
-    description: 'Music folder used to resolve relative paths (optional)',
+    description:
+      'Music folder used to resolve relative playlist paths (optional)',
     required: false
   })
 })
@@ -54,23 +57,10 @@ export default class PlayLocal extends Command {
       if (!(await safeDefer(ctx, true))) return
 
       const { file, base } = ctx.options as {
-        file: { url: string; size?: number }
+        file: { url: string; filename?: string; size?: number }
         base?: string
       }
       const baseDir = base?.trim() || undefined
-
-      const entries = parseM3u(await fetchImportFile(file))
-      if (entries.length === 0) {
-        await ctx.editOrReply({
-          embeds: [
-            new Embed()
-              .setDescription('❌ No tracks found in the playlist file.')
-              .setColor(0xff0000)
-          ],
-          flags: 64
-        })
-        return
-      }
 
       const player = await ensurePlayerForVoice(ctx, ctx.channelId)
       if (!player) {
@@ -80,6 +70,63 @@ export default class PlayLocal extends Command {
               .setDescription(
                 'You must be in a voice channel to use this command.'
               )
+              .setColor(0xff0000)
+          ],
+          flags: 64
+        })
+        return
+      }
+
+      // Single audio file → play via the HTTP source.
+      if (!PLAYLIST_RE.test(file.filename ?? '')) {
+        try {
+          const { added } = await resolveAndQueue({
+            client: ctx.client,
+            player,
+            query: file.url,
+            requester: ctx.interaction.user
+          })
+          if (!added.length) {
+            await ctx.editOrReply({
+              embeds: [
+                new Embed()
+                  .setDescription('❌ Could not load that file.')
+                  .setColor(0xff0000)
+              ],
+              flags: 64
+            })
+            return
+          }
+          await maybeStartPlayback(player)
+          await ctx.editOrReply({
+            embeds: [
+              new Embed()
+                .setDescription('✅ Added the file to the queue.')
+                .setColor(0x100e09)
+            ],
+            flags: 64
+          })
+        } catch (error) {
+          console.error('[play-local] file failed:', error)
+          await ctx.editOrReply({
+            embeds: [
+              new Embed()
+                .setDescription('❌ Could not play that file.')
+                .setColor(0xff0000)
+            ],
+            flags: 64
+          })
+        }
+        return
+      }
+
+      // Playlist file → parse m3u and play local disk files.
+      const entries = parseM3u(await fetchImportFile(file))
+      if (entries.length === 0) {
+        await ctx.editOrReply({
+          embeds: [
+            new Embed()
+              .setDescription('❌ No tracks found in the playlist file.')
               .setColor(0xff0000)
           ],
           flags: 64
@@ -108,8 +155,22 @@ export default class PlayLocal extends Command {
             query: resolved,
             requester: ctx.interaction.user
           })
-          if (added.length > 0) successCount++
-          else failCount++
+          if (added.length > 0) {
+            const track = added[0] as
+              | { title?: string; author?: string }
+              | undefined
+            if (track) {
+              const isUnknown = (value?: string) =>
+                !value || value.toLowerCase().startsWith('unknown')
+              if (isUnknown(track.title) && entry.title)
+                track.title = entry.title
+              if (isUnknown(track.author) && entry.author)
+                track.author = entry.author
+            }
+            successCount++
+          } else {
+            failCount++
+          }
         } catch {
           failCount++
         }
@@ -149,7 +210,7 @@ export default class PlayLocal extends Command {
       const message =
         error instanceof ImportFileError
           ? error.message
-          : 'Could not queue the local playlist. Please try again.'
+          : 'Could not play that file. Please try again.'
       try {
         await ctx.editOrReply({
           embeds: [

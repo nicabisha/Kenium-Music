@@ -77,8 +77,6 @@ export const createNowPlayingEmbed = (
 ) => {
   const { position = 0, volume = 0, loop, paused } = player || {}
   const { title = 'Unknown', uri = '', length = 0, requester } = track || {}
-
-  const platform = getPlatform(uri)
   const volumeIcon = volume === 0 ? '🔇' : volume < 50 ? '🔈' : '🔊'
   const loopIcon = loop === 'track' ? '🔂' : loop === 'queue' ? '🔁' : '▶️'
   const displayTitle = titleCaseWordBoundaries(truncateText(title))
@@ -100,7 +98,7 @@ export const createNowPlayingEmbed = (
     components: [
       {
         type: 10,
-        content: `**${platform.emoji} Now Playing** | **Queue size**: ${getQueueLength(player?.queue)}`
+        content: `**🎵 Now Playing** | **Queue size**: ${getQueueLength(player?.queue)}`
       },
       { type: 14, divider: true, spacing: 1 },
       {
@@ -238,8 +236,6 @@ export const createNowPlayingContainer = (options: NowPlayingUIOptions) => {
     requesterName = 'Unknown',
     artworkUrl = ''
   } = options
-
-  const platform = getPlatform(uri)
   const volumeIcon =
     volume === 0
       ? '\uD83D\uDD07'
@@ -258,7 +254,7 @@ export const createNowPlayingContainer = (options: NowPlayingUIOptions) => {
     components: [
       {
         type: 10,
-        content: `**${platform.emoji} Now Playing** | **Queue size**: ${queueLength}`
+        content: `**🎵 Now Playing** | **Queue size**: ${queueLength}`
       },
       { type: 14, divider: true, spacing: 1 },
       {

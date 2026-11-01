@@ -35,7 +35,8 @@ import type { EditableMessageLike } from './src/shared/helperTypes.ts'
 import {
   createNowPlayingEmbed,
   deleteNowPlayingMessage,
-  truncateText
+  truncateText,
+  updateNowPlayingEmbed
 } from './src/shared/nowPlaying.ts'
 import { isPlayerRecovering } from './src/shared/voiceLifecycle.ts'
 import { closeDatabase, initDatabase } from './src/utils/db.ts'
@@ -556,6 +557,15 @@ initDatabase()
     } catch (err) {
       client.logger.warn(`Failed to register voice manager: ${err}`)
     }
+
+    // Heartbeat: keep the now-playing card's progress and queue size fresh.
+    setInterval(() => {
+      for (const player of aqua.players.values()) {
+        if (player.current && player.nowPlayingMessage && !player.paused) {
+          updateNowPlayingEmbed(player, client).catch(() => {})
+        }
+      }
+    }, 5000)
   })
   .catch((error) => {
     console.error('Startup failed:', error)
